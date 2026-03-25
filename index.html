@@ -318,15 +318,40 @@ window.onload = function() {
 };
 
 function api(fn, data, onOk, onErr) {
-  fetch(API, {
-    method: 'POST',
-    mode: 'cors',
-    headers: { 'Content-Type': 'text/plain' },
-    body: JSON.stringify({ fn: fn, data: data })
-  })
-  .then(function(r) { return r.json(); })
-  .then(function(r) { if (onOk) onOk(r); })
-  .catch(function(e) { if (onErr) onErr(e); else toast('Error: ' + e.message, 'er'); });
+  // JSONP — única forma de llamar GAS desde dominio externo sin servidor
+  var cbName = 'cb_' + fn + '_' + Date.now();
+  var timeout = setTimeout(function() {
+    delete window[cbName];
+    var script = document.getElementById(cbName);
+    if (script) script.remove();
+    var err = new Error('Timeout llamando ' + fn);
+    if (onErr) onErr(err); else toast('Error: timeout en ' + fn, 'er');
+  }, 30000);
+
+  window[cbName] = function(r) {
+    clearTimeout(timeout);
+    delete window[cbName];
+    var script = document.getElementById(cbName);
+    if (script) script.remove();
+    if (onOk) onOk(r);
+  };
+
+  var url = API
+    + '?fn='       + encodeURIComponent(fn)
+    + '&data='     + encodeURIComponent(JSON.stringify(data || {}))
+    + '&callback=' + cbName;
+
+  var script = document.createElement('script');
+  script.id  = cbName;
+  script.src = url;
+  script.onerror = function() {
+    clearTimeout(timeout);
+    delete window[cbName];
+    script.remove();
+    var err = new Error('Error de red llamando ' + fn);
+    if (onErr) onErr(err); else toast('Error de red: ' + fn, 'er');
+  };
+  document.head.appendChild(script);
 }
 
 function tab(name) {
